@@ -20,8 +20,6 @@ Two signing modes are defined:
 - **HS256** (HMAC-SHA256 with a shared secret): Simple, suitable for self-hosted or single-tenant deployments where the client and server share a trust domain.
 - **ES256 / RS256** (asymmetric): Allows the attestation to be verified without a shared secret. The verifier only needs the issuer's public key.
 
-An optional **wrapped credential** field allows the attestation to carry secrets encrypted to the MCP server's public key, enabling blind credential delivery where the client transports credentials it cannot read.
-
 ## Specification of Requirements
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174) when, and only when, they appear in all capitals, as shown here.
@@ -43,7 +41,6 @@ Several MCP implementations already carry agent identity or session tokens in `_
 - The schema of the signed attestation payload.
 - The verification rules (nonce replay protection, TTL enforcement, key selection).
 - The transport encoding for attestations across HTTP and JSON-RPC.
-- The optional credential wrapping mechanism.
 
 This SEP fills that gap by defining a minimal, composable attestation envelope that can be adopted incrementally.
 
@@ -62,8 +59,6 @@ interface ServerCapabilities {
       algorithms: Array<"HS256" | "ES256" | "RS256">;
       /** Server requires attestation on all tool calls */
       required?: boolean;
-      /** Server supports wrapped credentials */
-      credentialDelivery?: boolean;
       /** Server can find its entry in a multi-server array */
       multiServer?: boolean;
     };
@@ -79,7 +74,6 @@ interface ClientCapabilities {
   extensions?: {
     "soup/tool-call-attestation"?: {
       algorithms: Array<"HS256" | "ES256" | "RS256">;
-      credentialDelivery?: boolean;
     };
   };
 }
@@ -122,8 +116,6 @@ interface Attestation {
   /** One or more tool calls signed by this attestation.
    *  Each MCP server verifies only the entry where
    *  serverFingerprint matches its own identity.
-   *  If credentialDelivery is used, individual entries
-   *  can reference a key in wrappedCredentials.
    */
   toolCalls: Array<{
     name: string;
@@ -143,12 +135,6 @@ interface Attestation {
      */
     args: string;
     serverFingerprint: string;
-    /** Optional. Key into wrappedCredentials dict.
-     *  If omitted and wrappedCredentials has exactly one entry,
-     *  that entry is used. If omitted and wrappedCredentials has
-     *  zero or multiple entries, the server MUST reject.
-     */
-    credentialRef?: string;
   }>;
 
   /** Version of the signing key. Enables key rotation without
@@ -182,22 +168,6 @@ interface Attestation {
    *  - RS256: hex-encoded RSASSA-PKCS1-v1_5 output.
    */
   signature: string;
-
-  /** Optional. Dictionary of wrapped credentials, each encrypted
-   *  to a specific MCP server's public key. Keys are opaque
-   *  refs referenced by toolCalls[].credentialRef.
-   *  The client carries but cannot decrypt any of these values.
-   *  Encoded as base64url strings.
-   *
-   *  Reserved key "_ack": opaque proof token encrypted to the
-   *  issuer's key, not the MCP server's. The MCP server MUST
-   *  NOT attempt to decrypt it. Instead, the server signs the
-   *  value as-is with its registered key and POSTs it back to
-   *  the issuer's ack endpoint at `{iss}/_ack`. Only the issuer
-   *  can decode the _ack and verify the server's signature.
-   *  See "Acknowledgement Protocol" for details.
-   */
-  wrappedCredentials?: Record<string, string>;
 }
 ```
 
@@ -276,9 +246,7 @@ If any check fails, the server MUST return a tool result with `isError: true` an
           attestation_error: true,
           reason: "signature_invalid" | "nonce_replay" | "expired" |
                   "tool_mismatch" | "server_mismatch" | "key_unavailable" |
-                  "resource_digest_mismatch" | "credential_not_found" |
-                  "credential_ambiguous" | "credential_decryption_failed" |
-                  "attestation_required"
+                  "resource_digest_mismatch" | "attestation_required"
         })
       }
     ]
@@ -287,31 +255,6 @@ If any check fails, the server MUST return a tool result with `isError: true` an
 ```
 
 Attestation failures are tool execution errors (the tool was not executed due to a failed security check), not protocol errors. They MUST be communicated as tool results, not JSON-RPC errors. This preserves the distinction MCP makes between protocol-level issues (malformed request, unknown method) and execution-level issues (policy rejection, security check failure).
-
-### Credential Delivery (Optional)
-
-If `credentialDelivery: true` is negotiated, the attestation MAY include a `wrappedCredentials` dictionary. Each value is a credential (API key, connection string, JWT, etc.) encrypted to the target MCP server's public key. The keys are opaque refs referenced by individual entries in `toolCalls[].credentialRef`.
-
-Encryption mechanism:
-
-- **For RSA keys**: RSA-OAEP with SHA-256.
-- **For EC keys**: ECIES with AES-256-GCM content encryption.
-
-Resolution rules:
-
-- If `toolCalls[i].credentialRef` is set → the server looks up `wrappedCredentials[credentialRef]`. If the key does not exist, the server MUST reject with `credential_not_found`.
-- If `credentialRef` is omitted and `wrappedCredentials` has exactly one entry → the server uses that single entry.
-- If `credentialRef` is omitted and `wrappedCredentials` has zero entries → the call carries no credential (tool may not require one).
-- If `credentialRef` is omitted and `wrappedCredentials` has multiple entries → the server MUST reject with `credential_ambiguous`.
-
-On the MCP server:
-
-1. Resolves the credential via the rules above.
-2. Decrypts the resolved entry to obtain the plaintext.
-3. Uses the credential for the tool call's authentication/authorization.
-4. SHOULD zeroize the credential in memory after the tool call completes.
-
-The client never has access to the plaintext credential.
 
 ### Error Reasons
 
@@ -326,9 +269,6 @@ Attestation failures are communicated as tool results with `isError: true`. The 
 | `server_mismatch` | No `toolCalls` entry matches the receiving server's fingerprint |
 | `key_unavailable` | Key identified by `alg` and `secretVersion` is not available |
 | `resource_digest_mismatch` | Content fetched at `args.resource` does not match the attested digest |
-| `credential_not_found` | The credential referenced by `credentialRef` does not exist in `wrappedCredentials` |
-| `credential_ambiguous` | `credentialRef` omitted but `wrappedCredentials` has multiple entries |
-| `credential_decryption_failed` | The wrapped credential could not be decrypted |
 | `attestation_required` | Server requires attestation but none was provided |
 
 ## Rationale
@@ -379,10 +319,6 @@ If the issuer's signing key (HS256 shared secret or ES256/RS256 private key) is 
 
 Verifiers allow up to 30 seconds of clock skew. An attacker who can skew the verifier's clock can extend the replay window. Servers SHOULD monitor clock drift and reject attestations if system time diverges from NTP by more than 30 seconds.
 
-### Side-Channel in Credential Wrapping
-
-The wrapped credential is encrypted to the MCP server's public key. It is opaque to the client. However, during decryption on the MCP server, the credential exists in plaintext in the server's memory. MCP servers handling sensitive credentials SHOULD operate in isolated environments (sandboxed containers, confidential computing) to minimize exposure.
-
 ### Privacy Considerations
 
 The `intent` field is human-readable and signed. It is visible to both the client and the MCP server in plaintext. Deployments handling sensitive intent descriptions SHOULD consider whether additional encryption of the intent field is required — this is out of scope for the current SEP but could be addressed in a future extension.
@@ -390,16 +326,6 @@ The `intent` field is human-readable and signed. It is visible to both the clien
 The `serverFingerprint` field identifies which MCP server was the target of a tool call. In multi-tenant or cross-org deployments, the set of servers an agent calls may reveal deployment topology, vendor relationships, or internal tooling choices. Deployments SHOULD evaluate whether the fingerprint alone constitutes sensitive metadata in their regulatory context.
 
 The `iss` field identifies the attestation issuer. In deployments where the issuer is a dedicated notary or compliance service, the issuer's identity is public by design — the attestation is meant to be verifiable by third parties. However, the issuer's request volume (inferred from attestation issuance rate) may leak operational metadata. Issuers concerned about traffic analysis MAY consider deploying behind a privacy-preserving relay.
-
-### Acknowledgement Protocol
-
-The `_ack` reserved key (see wrappedCredentials definition) serves dual purposes as both a lightweight DDoS mitigation and an execution confirmation signal:
-
-1. **Source authentication (DDoS mitigation)**: The `_ack` is signed with the MCP server's private key (the same key used for `wrappedCredentials` decryption, or a dedicated signing key). The client never has access to this key. By requiring the server to POST a signed opaque blob to `{iss}/_ack`, the issuer gains cryptographic proof that the identified MCP server — and only that server — received and acknowledged the attestation. An attacker who floods the issuer with attestation requests cannot complete the handshake without the server's key, so the `_ack` acts as a liveness check bound to a specific trusted identity.
-
-2. **Execution confirmation**: The `_ack` payload is encrypted to the issuer and opaque to the MCP server. It embeds the tool call result (or a digest thereof) so the issuer can later verify that the attested tool call actually ran and produced the expected outcome, closing the loop between intent and result.
-
-Limitations: The `_ack` provides source authentication but not execution truthfulness — a compromised server can sign a lie about what it executed. The issuer knows *who* acknowledged but cannot cryptographically prove *what actually ran*. Full acknowledgement semantics (retry, timeout, error codes, non-repudiation) are deferred to a follow-up SEP.
 
 ## Reference Implementation
 
@@ -440,16 +366,9 @@ Attestation verification failures use structured error payloads in tool results 
 | `server_mismatch` | No `toolCalls` entry matches the receiving server's fingerprint |
 | `key_unavailable` | Key identified by `alg` and `secretVersion` is not available |
 | `resource_digest_mismatch` | Content fetched at `args.resource` does not match the attested digest |
-| `credential_not_found` | The credential referenced by `credentialRef` does not exist in `wrappedCredentials` |
-| `credential_ambiguous` | `credentialRef` omitted but `wrappedCredentials` has multiple entries |
-| `credential_decryption_failed` | The wrapped credential could not be decrypted |
 | `attestation_required` | Server requires attestation but none was provided |
 
 Attestation errors do not introduce new JSON-RPC error codes. All failures are communicated as tool execution errors (`isError: true`), which is consistent with how MCP handles policy rejection and security check failures.
-
-### Acknowledgement Protocol Endpoint
-
-The `_ack` endpoint at `{iss}/_ack` is reserved as an extension-level convention. See Security Implications — Acknowledgement Protocol.
 
 ## Open Questions
 
@@ -465,4 +384,3 @@ The `_ack` endpoint at `{iss}/_ack` is reserved as an extension-level convention
 
 - **EU AI Act compliance mapping**: A companion document mapping each field of the attestation envelope to specific requirements in EU AI Act Articles 12, 13, 14, and 26(6) would aid enterprise procurement teams. Should this be included as an appendix or published separately?
 - **Privacy classification of `serverFingerprint`**: The fingerprint identifies which MCP server received the call, which may be PII-adjacent or commercially sensitive in some deployments. Should the spec include a privacy consideration for this field, or is it out of scope?
-- **Acknowledgement protocol specification**: The `_ack` reserved key is described briefly in the wrappedCredentials section. Should a future extension define a full acknowledgement protocol (endpoint discovery, retry, timeout, error codes) as a separate SEP?
