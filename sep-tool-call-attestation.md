@@ -156,11 +156,15 @@ interface Attestation {
    *  Verifiers MUST reject previously seen nonces within
    *  the TTL window. RECOMMENDED: 16+ bytes base64url-encoded.
    *
-   *  The last 6 characters are semi-reserved as a window
-   *  appendix (see `ack` section). The issuer may use them
-   *  for stateless window validity checks without changing
-   *  anything else in this interface. Servers MUST NOT
-   *  interpret the appendix — it is opaque to them.
+   *  The last 6 characters are reserved as a window appendix
+   *  used during `ack` pre-flight. The issuer may use the
+   *  appendix for stateless window validity checks without
+   *  additional storage — e.g., `HMAC(raw_nonce, window_uuid)[:6]`
+   *  tried against each active window UUID. If no window
+   *  matches, the OPTIONS pre-flight fails. Servers MUST NOT
+   *  interpret the appendix — it is opaque to them. The full
+   *  nonce (including appendix) is included in canonical JSON
+   *  for signature verification.
    */
   nonce: string;
 
@@ -273,6 +277,8 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
     - `X-Ack-Attestation-Nonce`: The value of `attestation.nonce` as-is.
     
     The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "challenge": "<challenge from header>", "attestation_nonce": "<nonce from header>", "signature": "<signature>" }`, where the signature is computed over `issuer`, `challenge`, and `attestation_nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`, and confirms both nonces match what it sent.
+    
+    The issuer uses the attestation nonce to verify that the attestation still belongs to a valid window (e.g., checking the last 6 characters against active window UUIDs). Window rotation is an issuer implementation detail — the SEP only specifies the wire format.
     
     - If the signature is valid and both nonces match, the server proceeds.
     - If the response is missing, the signature is invalid, or either nonce mismatches, treat as OPTIONS failure.
