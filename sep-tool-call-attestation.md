@@ -416,24 +416,6 @@ The following algorithm identifiers are used in the `alg` field of the `Attestat
 
 These identifiers are drawn from the JSON Web Signature (JWS) registry [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518). No new algorithm registrations are required.
 
-### Error Reason Identifiers
-
-Attestation verification failures use structured error payloads in tool results (see Verification Rules). The following `reason` strings are defined:
-
-| Reason | Description |
-|--------|-------------|
-| `signature_invalid` | Signature does not match the canonical payload |
-| `nonce_replay` | Nonce has been seen within the TTL window |
-| `expired` | `iat + exp` has passed |
-| `tool_mismatch` | Tool name does not match the `tools/call` request |
-| `server_mismatch` | No `toolCalls` entry matches the receiving server's fingerprint |
-| `key_unavailable` | Key identified by `alg` and `secretVersion` is not available |
-| `resource_digest_mismatch` | Content fetched at `args.resource` does not match the attested digest |
-| `attestation_required` | Server requires attestation but none was provided |
-| `ack_delivery_failed` | The `ack` POST could not be delivered and `required` is true |
-
-Attestation errors do not introduce new JSON-RPC error codes. All failures are communicated as tool execution errors (`isError: true`), which is consistent with how MCP handles policy rejection and security check failures.
-
 ## Open Questions
 
 ### Normative
