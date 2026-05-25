@@ -257,12 +257,16 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 
 6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
    a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
-   b. Execute the tool call.
-   c. After execution, sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout).
-   d. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
-   e. If the POST fails after all retries:
-      - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The nonce is consumed — the client MUST request a fresh attestation.
-      - If `ack.required` is false or omitted, the server proceeds. The compliance trail is degraded but the tool result is returned.
+   b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL with a randomly generated nonce. The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "nonce": "<server's nonce>", "signature": "<signature>" }`, where the signature is computed over `issuer` and `nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`.
+      - If the signature is valid, the server proceeds — the issuer endpoint is authenticated and reachable.
+      - If the response is missing or the signature is invalid, treat as OPTIONS failure.
+   c. **On OPTIONS failure** (timeout, non-2xx, or invalid signature):
+      - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The tool is never executed — the issuer's audit is authoritative. The nonce is consumed.
+      - If `ack.required` is false or omitted, the server SHOULD log the failure and proceed. The compliance trail is degraded.
+   d. Execute the tool call.
+   e. Sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout).
+   f. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
+   g. If the POST fails after all retries and the authenticated pre-flight succeeded, the server SHOULD log and return the tool result — the issuer was reachable and authentic at execution time, so the loss is transient.
 
 If the server cannot decrypt `ack.callback` (e.g., mismatched key), behavior depends on `ack.required`: if true, reject with `ack_delivery_failed`; if false or omitted, log and proceed.
 
@@ -382,11 +386,13 @@ The `iss` field identifies the attestation issuer. In deployments where the issu
 
 The optional `ack` field (see Attestation Envelope) closes the compliance loop by allowing the issuer to learn whether the attested tool call actually executed and what result it produced. The design provides:
 
-1. **Source authentication**: The MCP server signs `ack.token` with its own private key — a key the client cannot replicate. When the issuer receives the POST at the callback URL, it verifies the server's signature on the token, providing cryptographic proof that "this specific MCP server" (not the client, not a third party) handled the call.
+1. **Issuer authentication (pre-flight)**: Before executing the tool, the server sends an OPTIONS request to the callback URL with a nonce. The issuer responds with a signed payload. The server verifies this signature using the same key that signed the attestation envelope. This prevents a MitM from substituting a fake issuer endpoint — the tool is never executed unless the real issuer authenticates.
 
-2. **Execution confirmation**: The server includes the tool result (or a digest thereof) in the POST body alongside the signed token. The issuer can correlate this with the attestation it issued, confirming that the call ran and produced the expected outcome.
+2. **Source authentication**: The MCP server signs `ack.token` with its own private key — a key the client cannot replicate. When the issuer receives the POST at the callback URL, it verifies the server's signature on the token, providing cryptographic proof that "this specific MCP server" (not the client, not a third party) handled the call.
 
-3. **Privacy**: `ack.callback` is encrypted to the MCP server's public key — a passive observer or the client cannot discover the issuer's callback endpoint. `ack.token` is encrypted to the issuer's public key — even the MCP server cannot read its contents.
+3. **Execution confirmation**: The server includes the tool result (or a digest thereof) in the POST body alongside the signed token. The issuer can correlate this with the attestation it issued, confirming that the call ran and produced the expected outcome.
+
+4. **Privacy**: `ack.callback` is encrypted to the MCP server's public key — a passive observer or the client cannot discover the issuer's callback endpoint. `ack.token` is encrypted to the issuer's public key — even the MCP server cannot read its contents.
 
 Limitations: The acknowledgement proves *who* handled the call but not *truthfulness* — a compromised server can sign a lie about what result it produced. The `ack` is a lightweight compliance confirmation, not a non-repudiation receipt. Full acknowledgement semantics (retry, timeout, error codes, non-repudiation) may be addressed in a follow-up SEP.
 
