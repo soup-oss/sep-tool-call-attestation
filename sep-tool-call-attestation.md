@@ -1,11 +1,13 @@
 # SEP-{0000}: Tool Call Attestation
 
 - **Status**: Draft
-- **Type**: Standards Track
+- **Type**: Extensions Track
 - **Created**: 2026-05-23
 - **Author(s)**: heysoup.co Team
 - **Sponsor**: None (seeking sponsor)
 - **PR**: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/{NUMBER}
+- **Extension Identifier**: `soup/tool-call-attestation` (to be assigned upon acceptance as an official extension)
+- **Working Group**: Security Interest Group (proposed)
 
 ## Abstract
 
@@ -49,14 +51,13 @@ This SEP fills that gap by defining a minimal, composable attestation envelope t
 
 ### Capability Negotiation
 
-MCP servers that support attestation advertise it in their `serverCapabilities` during initialization:
+MCP servers that support attestation advertise it in their `serverCapabilities` during initialization using the `extensions` field (per SEP-2133):
 
 ```typescript
 interface ServerCapabilities {
   // ... existing fields
-  tools?: {
-    // ... existing fields
-    attestation?: {
+  extensions?: {
+    "soup/tool-call-attestation"?: {
       /** Supported signing algorithms */
       algorithms: Array<"HS256" | "ES256" | "RS256">;
       /** Server requires attestation on all tool calls */
@@ -70,14 +71,13 @@ interface ServerCapabilities {
 }
 ```
 
-Clients that wish to use attestation include a matching capability in `clientCapabilities`:
+Clients that wish to use attestation include a matching extension in `clientCapabilities`:
 
 ```typescript
 interface ClientCapabilities {
   // ... existing fields
-  tools?: {
-    // ... existing fields
-    attestation?: {
+  extensions?: {
+    "soup/tool-call-attestation"?: {
       algorithms: Array<"HS256" | "ES256" | "RS256">;
       credentialDelivery?: boolean;
     };
@@ -249,7 +249,7 @@ For JSON-RPC (STDIO, SSE), the attestation is carried in the `_meta` field of th
 
 ### Verification Rules
 
-MCP servers that advertise `tools.attestation` MUST implement the following verification:
+MCP servers that negotiate the `soup/tool-call-attestation` extension MUST implement the following verification:
 
 1. **Signature verification**: Decode the canonical JSON, verify the signature using the key identified by `alg` and `secretVersion`. For HS256, the shared secret must be pre-configured or derived. For ES256/RS256, the issuer's public key must be retrievable (e.g., from a key server, pre-shared, or published at a well-known URL matching `iss`).
 
@@ -361,7 +361,7 @@ Attestation is orthogonal to MCP's existing Authorization framework. Authorizati
 
 ## Backward Compatibility
 
-**Fully backward compatible.** The attestation capability is negotiated at initialization. Servers that do not advertise `tools.attestation` never receive attestation metadata. Clients that do not support it never send it. Existing MCP implementations are completely unaffected.
+**Fully backward compatible.** The attestation extension is negotiated at initialization via the `extensions` field. Servers that do not advertise `soup/tool-call-attestation` never receive attestation metadata. Clients that do not support it never send it. Existing MCP implementations are completely unaffected.
 
 Attestation errors are returned as tool execution errors (`isError: true`), not JSON-RPC protocol errors. This is consistent with how MCP handles other security-related tool execution failures and introduces no new JSON-RPC error codes.
 
@@ -411,19 +411,13 @@ A reference implementation will be provided as part of soup-oss, an MIT-licensed
 - Server fingerprint matching
 - An MCP server adapter that verifies attestations before forwarding to tool handlers
 
-## IANA Considerations
+## Extension-Defined Values
 
-This SEP defines the following provisional values for MCP registries:
-
-### Capability Name
-
-- **Capability**: `tools.attestation`
-- **Type**: Server capability (advertised in `serverCapabilities.tools.attestation`)
-- **Status**: Provisional
+The following identifiers and conventions are defined as part of this extension, scoped to implementations that negotiate `soup/tool-call-attestation`.
 
 ### Signing Algorithm Identifiers
 
-The following algorithm identifiers are defined for use in the `alg` field of the `Attestation` envelope:
+The following algorithm identifiers are used in the `alg` field of the `Attestation` envelope:
 
 | Identifier | Algorithm | Reference |
 |------------|-----------|-----------|
@@ -455,7 +449,7 @@ Attestation errors do not introduce new JSON-RPC error codes. All failures are c
 
 ### Acknowledgement Protocol Endpoint
 
-The `_ack` endpoint at `{iss}/_ack` is reserved for future registration. See Security Implications — Acknowledgement Protocol.
+The `_ack` endpoint at `{iss}/_ack` is reserved as an extension-level convention. See Security Implications — Acknowledgement Protocol.
 
 ## Open Questions
 
