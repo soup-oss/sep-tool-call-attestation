@@ -168,14 +168,32 @@ interface Attestation {
    *  - RS256: hex-encoded RSASSA-PKCS1-v1_5 output.
    */
   signature: string;
-}
-```
+
+  /** Optional. Acknowledgement proof that closes the compliance loop.
+   *  Two-part encrypted payload:
+   *
+   *  - `callback`: Encrypted to the MCP server's public key.
+   *    Contains the URL to POST the acknowledgement to.
+   *    The server decrypts this to discover where to send.
+   *
+   *  - `token`: Encrypted to the issuer's public key.
+   *    Opaque proof token. The server MUST NOT attempt to
+   *    decrypt it. Instead, the server signs the token as-is
+   *    with its own private key and POSTs it alongside the
+   *    tool result to the decrypted callback URL.
+   *
+   *  Both values are base64url-encoded ciphertext.
+   */
+  ack?: {
+    callback: string;
+    token: string;
+  };
 
 ### Canonical JSON for Signing
 
 The signature is computed over a deterministic JSON representation:
 
-1. Start with all fields of the `Attestation` object EXCEPT `signature`.
+1. Start with all fields of the `Attestation` object EXCEPT `signature`. The `ack` field (if present) is included — it is signed as part of the attestation.
 2. **Resource dereference**: For each entry in `toolCalls`, if `args` is a string that starts with `"resource: "`, the issuer MUST fetch the content at that URL, compute `sha256(content)`, and replace `args` with the canonical JSON string of `{ "resource": "<url>", "digest": "sha256:<hex>" }`. This is done BEFORE serialization — the signature covers the resolved form, not the resource reference.
 3. Serialize using **sorted keys** (lexicographic order at every nesting level), **no whitespace**, **no trailing newline**.
 4. The resulting UTF-8 byte string is the signing payload.
@@ -230,6 +248,14 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 4. **Resource verification (if applicable)**: For the matched `toolCalls` entry, if `args` is a JSON object containing `resource` and `digest` keys, the server MUST fetch the content at `args.resource`, compute `sha256(content)`, and compare against `args.digest`. If the digests do not match, the server MUST reject with `resource_digest_mismatch`. If the resource is unreachable, the server MAY reject or proceed at its discretion (network conditions vary).
 
 5. **Tool call match**: Find the entry in `toolCalls` where `serverFingerprint` matches the receiving server's identity. If no such entry exists, reject with `server_mismatch`. Then verify that the entry's `name` matches the `name` parameter of the `tools/call` request. If not, reject with `tool_mismatch`. This prevents cross-server replay and tool-substitution in a single step.
+
+6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
+   a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
+   b. Execute the tool call.
+   c. After execution, sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry on failure but MUST NOT fail the tool call — the acknowledgment is a post-execution compliance step, not a gate.
+   d. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
+
+If the server cannot decrypt `ack.callback` (e.g., mismatched key), it SHOULD log the error and proceed — the tool still executes. Malformed `ack` fields do not block the tool call; they degrade the compliance trail.
 
 Servers that do not advertise `multiServer: true` MAY reject attestations where `toolCalls.length > 1`.
 
@@ -326,6 +352,18 @@ The `intent` field is human-readable and signed. It is visible to both the clien
 The `serverFingerprint` field identifies which MCP server was the target of a tool call. In multi-tenant or cross-org deployments, the set of servers an agent calls may reveal deployment topology, vendor relationships, or internal tooling choices. Deployments SHOULD evaluate whether the fingerprint alone constitutes sensitive metadata in their regulatory context.
 
 The `iss` field identifies the attestation issuer. In deployments where the issuer is a dedicated notary or compliance service, the issuer's identity is public by design — the attestation is meant to be verifiable by third parties. However, the issuer's request volume (inferred from attestation issuance rate) may leak operational metadata. Issuers concerned about traffic analysis MAY consider deploying behind a privacy-preserving relay.
+
+### Acknowledgement Protocol
+
+The optional `ack` field (see Attestation Envelope) closes the compliance loop by allowing the issuer to learn whether the attested tool call actually executed and what result it produced. The design provides:
+
+1. **Source authentication**: The MCP server signs `ack.token` with its own private key — a key the client cannot replicate. When the issuer receives the POST at the callback URL, it verifies the server's signature on the token, providing cryptographic proof that "this specific MCP server" (not the client, not a third party) handled the call.
+
+2. **Execution confirmation**: The server includes the tool result (or a digest thereof) in the POST body alongside the signed token. The issuer can correlate this with the attestation it issued, confirming that the call ran and produced the expected outcome.
+
+3. **Privacy**: `ack.callback` is encrypted to the MCP server's public key — a passive observer or the client cannot discover the issuer's callback endpoint. `ack.token` is encrypted to the issuer's public key — even the MCP server cannot read its contents.
+
+Limitations: The acknowledgement proves *who* handled the call but not *truthfulness* — a compromised server can sign a lie about what result it produced. The `ack` is a lightweight compliance confirmation, not a non-repudiation receipt. Full acknowledgement semantics (retry, timeout, error codes, non-repudiation) may be addressed in a follow-up SEP.
 
 ## Reference Implementation
 
