@@ -182,11 +182,17 @@ interface Attestation {
    *    with its own private key and POSTs it alongside the
    *    tool result to the decrypted callback URL.
    *
-   *  Both values are base64url-encoded ciphertext.
+   *  - `required`: If true, the server MUST fail the tool
+   *    call if the acknowledgement POST cannot be delivered.
+   *    If false or omitted (default), failure degrades
+   *    the compliance trail but does not block execution.
+   *
+   *  Both `callback` and `token` values are base64url-encoded ciphertext.
    */
   ack?: {
     callback: string;
     token: string;
+    required?: boolean;
   };
 
 ### Canonical JSON for Signing
@@ -252,10 +258,13 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
    a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
    b. Execute the tool call.
-   c. After execution, sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry on failure but MUST NOT fail the tool call — the acknowledgment is a post-execution compliance step, not a gate.
+   c. After execution, sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout).
    d. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
+   e. If the POST fails after all retries:
+      - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The nonce is consumed — the client MUST request a fresh attestation.
+      - If `ack.required` is false or omitted, the server proceeds. The compliance trail is degraded but the tool result is returned.
 
-If the server cannot decrypt `ack.callback` (e.g., mismatched key), it SHOULD log the error and proceed — the tool still executes. Malformed `ack` fields do not block the tool call; they degrade the compliance trail.
+If the server cannot decrypt `ack.callback` (e.g., mismatched key), behavior depends on `ack.required`: if true, reject with `ack_delivery_failed`; if false or omitted, log and proceed.
 
 Servers that do not advertise `multiServer: true` MAY reject attestations where `toolCalls.length > 1`.
 
@@ -272,7 +281,8 @@ If any check fails, the server MUST return a tool result with `isError: true` an
           attestation_error: true,
           reason: "signature_invalid" | "nonce_replay" | "expired" |
                   "tool_mismatch" | "server_mismatch" | "key_unavailable" |
-                  "resource_digest_mismatch" | "attestation_required"
+                  "resource_digest_mismatch" | "attestation_required" |
+                  "ack_delivery_failed"
         })
       }
     ]
@@ -296,6 +306,7 @@ Attestation failures are communicated as tool results with `isError: true`. The 
 | `key_unavailable` | Key identified by `alg` and `secretVersion` is not available |
 | `resource_digest_mismatch` | Content fetched at `args.resource` does not match the attested digest |
 | `attestation_required` | Server requires attestation but none was provided |
+| `ack_delivery_failed` | The `ack` POST could not be delivered and `required` is true |
 
 ## Rationale
 
@@ -320,6 +331,20 @@ Using an array instead of a single `toolName`/`toolArgs`/`serverFingerprint` tri
 ### Why Resource References for Args
 
 Large tool call arguments (e.g., file contents, image data, verbose configuration) would inflate the attestation envelope if included inline. By allowing `args` to reference an external URL that the issuer dereferences and hashes, the attestation remains small and constant-size regardless of payload. The issuer acts as a notary that verifies content at signing time — the attestation proves "the content at this URL had this digest when the attestation was issued," not just "the agent claimed it had this digest." This keeps the verification path trustless: the verifier fetches the URL independently and confirms the digest matches the attested value.
+
+### Relationship to JWT
+
+The attestation envelope is structurally a JWT — signed payload with explicit `alg`, `iss`, `sub`, `iat`, and `exp` fields. The key differences are intentional:
+
+1. **No base64 encoding**: The envelope lives in `_meta`, which is already JSON. Wrapping JWT's three-part base64 encoding inside `_meta` adds a decode step with no security benefit. Parsing native JSON is one step fewer.
+
+2. **Canonical JSON enforcement**: Standard JWT verification compares the exact base64-encoded payload string. This SEP requires the verifier to re-serialize and verify, which catches accidental or malicious non-canonical encodings that standard JWT would accept.
+
+3. **Resource dereference**: Attesting large arguments by URL + digest is outside JWT's scope. It would require a custom claim with a new verification rule — which is exactly what this SEP defines.
+
+4. **`ack` protocol**: JWT has no mechanism for server-signed post-execution acknowledgement with encrypted callback and proof token. Building this as a JWT extension claim set would produce a profile specification functionally equivalent to this SEP.
+
+A standard JWT would work with a custom claim definition and no canonical JSON enforcement. This SEP deviates where the `_meta` transport and compliance use case demand it, and aligns with JWT everywhere else.
 
 ### Relationship to Authorization
 
@@ -405,6 +430,7 @@ Attestation verification failures use structured error payloads in tool results 
 | `key_unavailable` | Key identified by `alg` and `secretVersion` is not available |
 | `resource_digest_mismatch` | Content fetched at `args.resource` does not match the attested digest |
 | `attestation_required` | Server requires attestation but none was provided |
+| `ack_delivery_failed` | The `ack` POST could not be delivered and `required` is true |
 
 Attestation errors do not introduce new JSON-RPC error codes. All failures are communicated as tool execution errors (`isError: true`), which is consistent with how MCP handles policy rejection and security check failures.
 
@@ -417,9 +443,11 @@ Attestation errors do not introduce new JSON-RPC error codes. All failures are c
 - **Nonce cache operational guidance**: Should the spec recommend concrete bloom filter parameters (e.g., 1M entry capacity, 0.1% FP rate, 300s eviction) or leave cache sizing to implementation?
 - **Conformance test suite location**: Should the attestation conformance tests live in the MCP conformance repository or in the reference implementation's repository?
 - **`serverFingerprint` format**: Should the spec define a standard format for the server fingerprint (e.g., `sha256$<hex>` of the server's public key or TLS certificate), or leave it as an opaque string defined by each deployment?
+- **URI-based key discovery**: The `serverFingerprint` currently carries no key distribution semantics — verifiers must know out-of-band which key belongs to which fingerprint. A stronger pattern would make the fingerprint a URI (e.g., `mcp://server-a.example.com`), with the server's public key published at `{fingerprint}/.well-known/jwks.json` in standard JWKS format. The issuer fetches this to encrypt `ack.callback`; the verifier fetches it to verify `ack` signatures. Access control on the JWKS endpoint (MCP auth, mTLS) ensures only authorized parties can read keys. This converges server identity, key discovery, and key format into one standard pattern with no new infrastructure. Should the SEP adopt URI-based fingerprints with JWKS well-known discovery?
 
 ### Non-Normative
 
 - **EU AI Act compliance mapping**: A companion document mapping each field of the attestation envelope to specific requirements in EU AI Act Articles 12, 13, 14, and 26(6) would aid enterprise procurement teams. Should this be included as an appendix or published separately?
 - **Privacy classification of `serverFingerprint`**: The fingerprint identifies which MCP server received the call, which may be PII-adjacent or commercially sensitive in some deployments. Should the spec include a privacy consideration for this field, or is it out of scope?
+- **`ack` protocol scope**: The optional `ack` field closes the compliance loop but adds significant complexity — dual encryption, callback decryption, token signing, and POST delivery with retry semantics. This SEP keeps it as a single optional field so the attestation envelope is self-contained for compliance use cases. However, a separate extension could define the full acknowledgement protocol (endpoint discovery, retry policy, timeout handling, error codes, non-repudiation). Should `ack` be deferred to a follow-up SEP to keep this proposal focused on the core attestation envelope?
 - **Credential binding in attestations**: In strict compliance scenarios, the attestation should ideally bind which credential authorized the tool call, so the server can confirm the agent did not inject an unauthorized credential outside the attested intent. This SEP deliberately omits credential delivery (wrapping and transporting secrets). A lighter alternative would be an optional `credentialRef` on `toolCalls` entries — the attestation carries a key or reference to a pre-registered credential, not the credential itself. The server resolves the credential internally and rejects if the agent supplies a different one. This preserves the audit trail (credential provenance) without the transport or decryption complexity of wrapped secrets. Should a future extension define this pattern?
