@@ -155,6 +155,12 @@ interface Attestation {
   /** Cryptographic nonce unique to this attestation.
    *  Verifiers MUST reject previously seen nonces within
    *  the TTL window. RECOMMENDED: 16+ bytes base64url-encoded.
+   *
+   *  The last 6 characters are semi-reserved as a window
+   *  appendix (see `ack` section). The issuer may use them
+   *  for stateless window validity checks without changing
+   *  anything else in this interface. Servers MUST NOT
+   *  interpret the appendix — it is opaque to them.
    */
   nonce: string;
 
@@ -262,10 +268,12 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 
 6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
    a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
-   b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL with a randomly generated nonce in the `X-Ack-Nonce` request header. The format of the nonce is implementation-defined (base64url token recommended). The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "nonce": "<server's nonce>", "signature": "<signature>" }`, where the signature is computed over `issuer` and `nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`.
-      - If the signature is valid, the server proceeds — the issuer endpoint is authenticated and reachable.
-      - If the response is missing or the signature is invalid, treat as OPTIONS failure.
-      - Note: The exact transport mechanism for the nonce (header, query parameter, or request body) is left for implementation discussion.
+   b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL. The request MUST include two headers:
+      - `X-Ack-Challenge`: A randomly generated challenge nonce (implementation-defined format, base64url token recommended).
+      - `X-Ack-Attestation-Nonce`: The value of `attestation.nonce` as-is.
+      The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "challenge": "<challenge from header>", "attestation_nonce": "<nonce from header>", "signature": "<signature>" }`, where the signature is computed over `issuer`, `challenge`, and `attestation_nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`, and confirms both nonces match what it sent.
+      - If the signature is valid and both nonces match, the server proceeds.
+      - If the response is missing, the signature is invalid, or either nonce mismatches, treat as OPTIONS failure.
    c. **On OPTIONS failure** (timeout, non-2xx, or invalid signature):
       - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The tool is never executed — the issuer's audit is authoritative. The nonce is consumed.
       - If `ack.required` is false or omitted, the server SHOULD log the failure and proceed. The compliance trail is degraded.
