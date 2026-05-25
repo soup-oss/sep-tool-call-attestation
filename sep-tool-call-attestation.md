@@ -184,8 +184,13 @@ interface Attestation {
    *
    *  - `required`: If true, the server MUST fail the tool
    *    call if the acknowledgement POST cannot be delivered.
-   *    If false or omitted (default), failure degrades
-   *    the compliance trail but does not block execution.
+   *  If false or omitted (default), failure degrades
+   *  the compliance trail but does not block execution.
+   *
+   *  NOTE: `ack` requires asymmetric signing (ES256/RS256).
+   *  If `alg` is HS256 and `ack` is present, the server MUST
+   *  reject the attestation — the issuer has no public key
+   *  for callback encryption or OPTIONS signature verification.
    *
    *  Both `callback` and `token` values are base64url-encoded ciphertext.
    */
@@ -257,14 +262,15 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 
 6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
    a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
-   b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL with a randomly generated nonce. The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "nonce": "<server's nonce>", "signature": "<signature>" }`, where the signature is computed over `issuer` and `nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`.
+   b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL with a randomly generated nonce in the `X-Ack-Nonce` request header. The format of the nonce is implementation-defined (base64url token recommended). The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "nonce": "<server's nonce>", "signature": "<signature>" }`, where the signature is computed over `issuer` and `nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`.
       - If the signature is valid, the server proceeds — the issuer endpoint is authenticated and reachable.
       - If the response is missing or the signature is invalid, treat as OPTIONS failure.
+      - Note: The exact transport mechanism for the nonce (header, query parameter, or request body) is left for implementation discussion.
    c. **On OPTIONS failure** (timeout, non-2xx, or invalid signature):
       - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The tool is never executed — the issuer's audit is authoritative. The nonce is consumed.
       - If `ack.required` is false or omitted, the server SHOULD log the failure and proceed. The compliance trail is degraded.
    d. Execute the tool call.
-   e. Sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout).
+   e. Sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout). The issuer SHOULD respond with `200 { "status": "accepted" }` on success; the server SHOULD treat any 2xx as success.
    f. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
    g. If the POST fails after all retries and the authenticated pre-flight succeeded, the server SHOULD log and return the tool result — the issuer was reachable and authentic at execution time, so the loss is transient.
 
