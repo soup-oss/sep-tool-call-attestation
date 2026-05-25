@@ -267,20 +267,22 @@ MCP servers that negotiate the `soup/tool-call-attestation` extension MUST imple
 5. **Tool call match**: Find the entry in `toolCalls` where `serverFingerprint` matches the receiving server's identity. If no such entry exists, reject with `server_mismatch`. Then verify that the entry's `name` matches the `name` parameter of the `tools/call` request. If not, reject with `tool_mismatch`. This prevents cross-server replay and tool-substitution in a single step.
 
 6. **Acknowledgement processing (if applicable)**: If the attestation includes an `ack` field:
-  a. Decrypt `ack.callback` using the server's private key to obtain the callback URL.
-  b. **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL. The request MUST include two headers:
+  - Decrypt `ack.callback` using the server's private key to obtain the callback URL.
+  - **Authenticated pre-flight check**: Send an OPTIONS request to the callback URL. The request MUST include two headers:
     - `X-Ack-Challenge`: A randomly generated challenge nonce (implementation-defined format, base64url token recommended).
     - `X-Ack-Attestation-Nonce`: The value of `attestation.nonce` as-is.
+    
     The issuer MUST respond with a signed JSON payload: `{ "issuer": "<iss>", "challenge": "<challenge from header>", "attestation_nonce": "<nonce from header>", "signature": "<signature>" }`, where the signature is computed over `issuer`, `challenge`, and `attestation_nonce` using the issuer's signing key — the same key and algorithm (`alg`) that signed the attestation envelope. The server verifies this signature using the key identified by `attestation.alg` and `attestation.iss`, and confirms both nonces match what it sent.
+    
     - If the signature is valid and both nonces match, the server proceeds.
     - If the response is missing, the signature is invalid, or either nonce mismatches, treat as OPTIONS failure.
-  c. **On OPTIONS failure** (timeout, non-2xx, or invalid signature):
+  - **On OPTIONS failure** (timeout, non-2xx, or invalid signature):
     - If `ack.required` is true, the server MUST reject the tool call with `ack_delivery_failed`. The tool is never executed — the issuer's audit is authoritative. The nonce is consumed.
     - If `ack.required` is false or omitted, the server SHOULD log the failure and proceed. The compliance trail is degraded.
-  d. Execute the tool call.
-  e. Sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout). The issuer SHOULD respond with `200 { "status": "accepted" }` on success; the server SHOULD treat any 2xx as success.
-  f. The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
-  g. If the POST fails after all retries and the authenticated pre-flight succeeded, the server SHOULD log and return the tool result — the issuer was reachable and authentic at execution time, so the loss is transient.
+  - Execute the tool call.
+  - Sign `ack.token` as-is with the server's private key. Construct a POST request to the callback URL containing `{ "token": "<signed token>", "result": <tool result or digest thereof> }`. The server SHOULD retry the POST on transient failure (e.g., network error, timeout). The issuer SHOULD respond with `200 { "status": "accepted" }` on success; the server SHOULD treat any 2xx as success.
+  - The `ack.token` is opaque and encrypted to the issuer's public key. The server MUST NOT attempt to decrypt it. Its purpose is to bind the server's identity to the tool result so the issuer can confirm which server acknowledged which result.
+  - If the POST fails after all retries and the authenticated pre-flight succeeded, the server SHOULD log and return the tool result — the issuer was reachable and authentic at execution time, so the loss is transient.
 
 If the server cannot decrypt `ack.callback` (e.g., mismatched key), behavior depends on `ack.required`: if true, reject with `ack_delivery_failed`; if false or omitted, log and proceed.
 
