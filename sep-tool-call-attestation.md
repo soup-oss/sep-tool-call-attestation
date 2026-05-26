@@ -191,7 +191,7 @@ interface Attestation {
    */
   signature: string;
 }
-```
+````
 
 ### Canonical JSON for Signing
 
