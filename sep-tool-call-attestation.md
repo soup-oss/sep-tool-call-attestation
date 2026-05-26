@@ -159,14 +159,6 @@ interface Attestation {
    */
   toolCalls: Array<{
     name: string;
-    /** SHA-256 hash commitment over the canonical JSON bytes of
-     *  the tool arguments. The payload stays local — only the
-     *  verifier that already has the arguments can confirm the
-     *  match. Privacy-friendly default: no raw arguments cross
-     *  the attestation wire.
-     *  Encoding: base64url-encoded 32-byte digest.
-     */
-    args_digest?: string;
     /** Content-addressed reference: a retrieval URI alongside
      *  the digest. The verifier fetches the content, hashes it,
      *  and compares against the digest to confirm integrity.
@@ -175,11 +167,13 @@ interface Attestation {
      */
     args_ref?: { uri: string; digest: string };
     /** Redacted, transformed, or identity projection of the
-     *  arguments, with its own digest attested. Useful when the
-     *  full arguments contain PII or trade secrets but a reviewed
-     *  summary can be recorded for audit. For self-contained audit
-     *  records, the identity projection (all arguments unchanged)
-     *  is also a valid use of this field.
+     *  arguments. Useful when the full arguments contain PII or
+     *  trade secrets but a reviewed summary can be recorded for
+     *  audit. For self-contained audit records, the identity
+     *  projection (all arguments unchanged) is a valid use of
+     *  this field — the attestation signature covers the
+     *  projection, so integrity is guaranteed without a separate
+     *  digest.
      *  Encoding: JSON-stringified projection of the arguments.
      */
     args_projection?: string;
@@ -313,15 +307,14 @@ Using an array instead of a single `toolName`/`toolArgs`/`serverFingerprint` tri
 
 The European Commission's draft high-risk AI classification guidelines treat chained agentic orchestration as a single AI system, making a plan-level attestation the correct audit primitive. Hop-by-hop logging would treat each sub-agent as an independent system, which the guidelines explicitly preclude.
 
-### Why Three-Way Args Shape
+### Why Two-Way Args Shape
 
-Tool call arguments vary widely in size and sensitivity. A single args field forces every deployment into one approach. The three-way shape (`args_digest`, `args_ref`, `args_projection`) lets each deployment choose the right trade-off:
+Tool call arguments vary widely in size and sensitivity. A single args field forces every deployment into one approach. The two-way shape (`args_ref`, `args_projection`) covers the two natural patterns without overloading:
 
-- **Digest (privacy-friendly default)**: A SHA-256 hash commitment over the canonical argument bytes. The payload never leaves the issuer's trust boundary. Only a verifier that already holds the arguments can confirm the commitment. Best for PII, trade secrets, or large payloads.
-- **Reference (content-addressed)**: A retrieval URI alongside the digest. The verifier fetches, hashes, and confirms. Useful when the arguments are large and stored externally (file contents, image data) and the verifier has network access.
-- **Projection (redacted or self-contained audit)**: A transformed, summarized, or identity-copied version of the arguments, with its own attested digest. Useful when the full payload is too large or sensitive for inline storage but a reviewed summary is needed for the audit trail. For self-contained audit records, the identity projection (original arguments unchanged) is a valid use of this field.
+- **Reference (content-addressed)**: A retrieval URI alongside its digest. The verifier fetches, hashes, and confirms. Useful when arguments are large, stored externally (file contents, image data), or must not cross the attestation wire for privacy reasons.
+- **Projection (redacted or self-contained audit)**: A transformed, summarized, or identity-copied version of the arguments, carried inline. Useful when the full payload is manageable and a self-contained audit record is needed. For privacy- or size-sensitive cases, the projection may be a redacted subset or a hash commitment rather than the full arguments. The attestation signature covers the projection, so no separate digest is needed.
 
-At least one of the three MUST be present per `toolCalls` entry.
+At least one of the two MUST be present per `toolCalls` entry.
 
 ### Relationship to JWT
 
@@ -331,7 +324,7 @@ The attestation envelope is structurally a JWT — signed payload with explicit 
 
 2. **Canonical JSON enforcement**: Standard JWT verification compares the exact base64-encoded payload string. This SEP requires the verifier to re-serialize and verify, which catches accidental or malicious non-canonical encodings that standard JWT would accept. This SEP uses RFC 8785 (JCS) rather than JWT's base64url approach.
 
-3. **Structured args commitment**: JWT carries claims as flat base64-encoded JSON. This SEP defines typed argument commitments (digest, reference, projection) that JWT has no native concept of. A JWT profile could approximate this with custom claims, but the SEP's structured approach makes the commitment semantics explicit and machine-checkable.
+3. **Structured args commitment**: JWT carries claims as flat base64-encoded JSON. This SEP defines typed argument commitments (reference, projection) that JWT has no native concept of. A JWT profile could approximate this with custom claims, but the SEP's structured approach makes the commitment semantics explicit and machine-checkable.
 
 A standard JWT would work with a custom claim definition and no canonical JSON enforcement. This SEP deviates where the `_meta` transport and compliance use case demand it, and aligns with JWT everywhere else.
 
