@@ -1,0 +1,13 @@
+{
+  "name": "sep-2787-attestation-demo",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "demo": "tsx src/demo.ts",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "vitest": "^2.1.0"
+  }
+}
