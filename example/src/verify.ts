@@ -39,6 +39,9 @@ export async function verify(params: VerifyParams): Promise<VerifyResult> {
   const iat = new Date(envelope.iat).getTime();
   const ttl = envelope.exp * 1000;
   const skewMs = 30_000;
+  if (now.getTime() < iat - skewMs) {
+    return { ok: false, reason: "expired" };
+  }
   if (now.getTime() > iat + ttl + skewMs) {
     return { ok: false, reason: "expired" };
   }

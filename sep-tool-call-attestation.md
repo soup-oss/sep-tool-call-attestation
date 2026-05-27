@@ -6,7 +6,7 @@
 - **Author(s)**: heysoup.co Team
 - **Sponsor**: None (seeking sponsor)
 - **PR**: https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2787
-- **Extension Identifier**: `soup/tool-call-attestation` (to be assigned upon acceptance as an official extension)
+- **Extension Identifier**: `attestation/tool-call` (to be assigned upon acceptance as an official extension)
 - **Working Group**: Security Interest Group (proposed)
 
 ## Abstract
@@ -56,7 +56,7 @@ MCP servers that support attestation advertise it in their `serverCapabilities` 
 interface ServerCapabilities {
   // ... existing fields
   extensions?: {
-    "soup/tool-call-attestation"?: {
+    "attestation/tool-call"?: {
       /** Supported signing algorithms */
       algorithms: Array<"HS256" | "ES256" | "RS256">;
       /** Server requires attestation on all tool calls */
@@ -74,14 +74,14 @@ Clients that wish to use attestation include a matching extension in `clientCapa
 interface ClientCapabilities {
   // ... existing fields
   extensions?: {
-    "soup/tool-call-attestation"?: {
+    "attestation/tool-call"?: {
       algorithms: Array<"HS256" | "ES256" | "RS256">;
     };
   };
 }
 ```
 
-If a server advertises `required: true`, clients MUST include a valid attestation on every `tools/call` request or the server MUST reject the call with an error.
+If a server advertises `required: true`, clients MUST include a valid attestation on every `tools/call` request or the server MUST reject the call with an error. If a server advertises `required: true` and the client's capabilities do not include the `attestation/tool-call` extension, the client MUST NOT call tools on that server.
 
 ### Attestation Envelope
 
@@ -134,7 +134,8 @@ interface Attestation {
 
   /** Cryptographic nonce unique to this attestation.
    *  Verifiers MUST reject previously seen nonces within
-   *  the TTL window. RECOMMENDED: 16+ bytes base64url-encoded.
+   *  the TTL window. RECOMMENDED: 16+ cryptographically random
+   *  bytes base64url-encoded.
    */
   nonce: string;
 
@@ -212,7 +213,7 @@ For HTTP transports, the attestation is carried in a request header:
 X-MCP-Attestation: <base64url(canonicalJSON(attestation))>
 ```
 
-The server decodes the header, verifies the signature, checks the nonce and TTL, then processes the tool call.
+The server decodes the header, verifies the signature, checks the nonce and TTL, then processes the tool call. The attestation header MUST be transmitted over HTTPS to prevent interception and replay.
 
 #### JSON-RPC Transport
 
@@ -237,13 +238,13 @@ For JSON-RPC (STDIO, SSE), the attestation is carried in the `_meta` field of th
 
 ### Verification Rules
 
-MCP servers that negotiate the `soup/tool-call-attestation` extension MUST implement the following verification:
+MCP servers that negotiate the `attestation/tool-call` extension MUST implement the following verification:
 
 1. **Signature verification**: Decode the canonical JSON (RFC 8785), verify the signature using the key identified by `alg` and `secretVersion`. For HS256, the shared secret must be pre-configured or derived. For ES256/RS256, the issuer's public key must be retrievable (e.g., from a key server, pre-shared, or published at a well-known URL matching `iss`).
 
 2. **Nonce replay check**: Reject attestations whose `nonce` has been seen within `iat + exp`. RECOMMENDED: an in-memory bloom filter with background GC, or a bounded cache with the TTL window as the eviction horizon.
 
-3. **TTL check**: Reject if `iat + exp < now()`. Allow up to 30 seconds of clock skew between issuer and verifier. Beyond that, the attestation MUST be rejected.
+3. **TTL check**: Reject if `now < iat - 30000ms` (attestation from the future, beyond clock skew) or `now > iat + exp + 30000ms` (expired, beyond clock skew).
 
 4. **Tool call match**: Find the entry in `toolCalls` where `serverFingerprint` matches the receiving server's identity. If no such entry exists, reject with `server_mismatch`. Then verify that the entry's `name` matches the `name` parameter of the `tools/call` request. If not, reject with `tool_mismatch`. This prevents cross-server replay and tool-substitution in a single step.
 
@@ -344,7 +345,7 @@ Attestation is orthogonal to MCP's existing Authorization framework. Authorizati
 
 ## Backward Compatibility
 
-**Fully backward compatible.** The attestation extension is negotiated at initialization via the `extensions` field. Servers that do not advertise `soup/tool-call-attestation` never receive attestation metadata. Clients that do not support it never send it. Existing MCP implementations are completely unaffected.
+**Fully backward compatible.** The attestation extension is negotiated at initialization via the `extensions` field. Servers that do not advertise `attestation/tool-call` never receive attestation metadata. Clients that do not support it never send it. Existing MCP implementations are completely unaffected.
 
 Attestation errors are returned as tool execution errors (`isError: true`), not JSON-RPC protocol errors. This is consistent with how MCP handles other security-related tool execution failures and introduces no new JSON-RPC error codes.
 
@@ -386,7 +387,7 @@ A JavaScript/TypeScript reference implementation will be provided as part of sou
 
 ## Extension-Defined Values
 
-The following identifiers and conventions are defined as part of this extension, scoped to implementations that negotiate `soup/tool-call-attestation`.
+The following identifiers and conventions are defined as part of this extension, scoped to implementations that negotiate `attestation/tool-call`.
 
 ### Signing Algorithm Identifiers
 
