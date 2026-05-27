@@ -30,14 +30,14 @@ export async function verify(params: VerifyParams): Promise<VerifyResult> {
   }
 
   // ── Rule 2: Nonce replay check ──
-  if (nonceCache.has(envelope.nonce)) {
+  if (nonceCache.has(envelope.issuerAsserted.nonce)) {
     return { ok: false, reason: "nonce_replay" };
   }
-  nonceCache.add(envelope.nonce);
+  nonceCache.add(envelope.issuerAsserted.nonce);
 
   // ── Rule 3: TTL check ──
-  const iat = new Date(envelope.iat).getTime();
-  const ttl = envelope.exp * 1000;
+  const iat = new Date(envelope.issuerAsserted.iat).getTime();
+  const ttl = envelope.issuerAsserted.expSeconds * 1000;
   const skewMs = 30_000;
   if (now.getTime() < iat - skewMs) {
     return { ok: false, reason: "expired" };
@@ -47,7 +47,7 @@ export async function verify(params: VerifyParams): Promise<VerifyResult> {
   }
 
   // ── Rule 4: Tool call match ──
-  const entry = envelope.toolCalls.find(
+  const entry = envelope.payloadDerived.toolCalls.find(
     (tc) => tc.serverFingerprint === runtimeServerFingerprint,
   );
   if (!entry) {

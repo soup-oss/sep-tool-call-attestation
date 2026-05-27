@@ -5,8 +5,8 @@ import type { Attestation } from "./types.js";
 type SignInput = Attestation & { signature?: string };
 
 export async function sign(input: SignInput, secret: string): Promise<Attestation> {
-  if (input.alg !== "HS256") {
-    throw new Error(`Unsupported algorithm: ${input.alg}`);
+  if (input.issuerAsserted.alg !== "HS256") {
+    throw new Error(`Unsupported algorithm: ${input.issuerAsserted.alg}`);
   }
 
   const { signature: _, ...fields } = input;

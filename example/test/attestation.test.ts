@@ -31,17 +31,20 @@ async function makeEnvelope(
 ): Promise<Attestation> {
   const body = "Hello!";
   const args = { to: "a@b.com", subject: "Hi", body };
-  return sign(
-    {
-      version: 1,
+  const base: Attestation = {
+    issuerAsserted: {
       alg: "HS256",
       iss: "issuer://test",
       sub: "agent:test-bot",
       secretVersion: "1",
       iat: "2026-06-01T00:00:00Z",
-      exp: 300,
+      expSeconds: 300,
       nonce: mkNonce(),
+    },
+    plannerDeclared: {
       intent: "Test attestation",
+    },
+    payloadDerived: {
       toolCalls: [
         {
           name: "test_tool",
@@ -49,11 +52,10 @@ async function makeEnvelope(
           serverFingerprint: "mcp://test.example.com",
         },
       ],
-      signature: "",
-      ...overrides,
     },
-    SECRET,
-  );
+    signature: "",
+  };
+  return sign({ ...base, ...overrides }, SECRET);
 }
 
 describe("SEP-2787 Attestation", () => {
@@ -79,14 +81,16 @@ describe("SEP-2787 Attestation", () => {
       const ref = fixtureRef(contents);
       const args = { to: "a@b.com", subject: "Hi" };
       const env = await makeEnvelope({
-        toolCalls: [
-          {
-            name: "test_tool",
-            argsRef: ref,
-            argsProjection: JSON.stringify(args),
-            serverFingerprint: "mcp://test.example.com",
-          },
-        ],
+        payloadDerived: {
+          toolCalls: [
+            {
+              name: "test_tool",
+              argsRef: ref,
+              argsProjection: JSON.stringify(args),
+              serverFingerprint: "mcp://test.example.com",
+            },
+          ],
+        },
       });
       const result = await verify({
         envelope: env,
@@ -102,13 +106,15 @@ describe("SEP-2787 Attestation", () => {
 
     it("3. Redacted projection passes", async () => {
       const env = await makeEnvelope({
-        toolCalls: [
-          {
-            name: "test_tool",
-            argsProjection: JSON.stringify({ subject: "Hi" }),
-            serverFingerprint: "mcp://test.example.com",
-          },
-        ],
+        payloadDerived: {
+          toolCalls: [
+            {
+              name: "test_tool",
+              argsProjection: JSON.stringify({ subject: "Hi" }),
+              serverFingerprint: "mcp://test.example.com",
+            },
+          ],
+        },
       });
       const result = await verify({
         envelope: env,
@@ -187,13 +193,15 @@ describe("SEP-2787 Attestation", () => {
     it("8. Tampered argsRef content fails", async () => {
       const ref = fixtureRef("real content");
       const env = await makeEnvelope({
-        toolCalls: [
-          {
-            name: "test_tool",
-            argsRef: ref,
-            serverFingerprint: "mcp://test.example.com",
-          },
-        ],
+        payloadDerived: {
+          toolCalls: [
+            {
+              name: "test_tool",
+              argsRef: ref,
+              serverFingerprint: "mcp://test.example.com",
+            },
+          ],
+        },
       });
       const result = await verify({
         envelope: env,
@@ -213,8 +221,15 @@ describe("SEP-2787 Attestation", () => {
   describe("TTL and replay", () => {
     it("9. Expired TTL fails", async () => {
       const env = await makeEnvelope({
-        iat: "2026-06-01T00:00:00Z",
-        exp: 5,
+        issuerAsserted: {
+          alg: "HS256",
+          iss: "issuer://test",
+          sub: "agent:test-bot",
+          secretVersion: "1",
+          iat: "2026-06-01T00:00:00Z",
+          expSeconds: 5,
+          nonce: mkNonce(),
+        },
       });
       const later = new Date("2026-06-01T00:10:00Z");
       const result = await verify({
@@ -250,8 +265,16 @@ describe("SEP-2787 Attestation", () => {
 
     it("11. Different nonces both pass", async () => {
       const cache = new Set<string>();
-      const env1 = await makeEnvelope({ nonce: mkNonce() });
-      const env2 = await makeEnvelope({ nonce: mkNonce() });
+      const base = {
+        alg: "HS256" as const,
+        iss: "issuer://test",
+        sub: "agent:test-bot",
+        secretVersion: "1",
+        iat: "2026-06-01T00:00:00Z",
+        expSeconds: 300,
+      };
+      const env1 = await makeEnvelope({ issuerAsserted: { ...base, nonce: mkNonce() } });
+      const env2 = await makeEnvelope({ issuerAsserted: { ...base, nonce: mkNonce() } });
       const r1 = await verify({
         envelope: env1, secret: SECRET, runtimeToolName: "test_tool",
         runtimeArguments: { to: "a@b.com", subject: "Hi", body: "Hello!" },
@@ -268,10 +291,17 @@ describe("SEP-2787 Attestation", () => {
 
     it("12. Clock skew within 30s is tolerated", async () => {
       const env = await makeEnvelope({
-        iat: "2026-06-01T00:00:00Z",
-        exp: 300,
+        issuerAsserted: {
+          alg: "HS256",
+          iss: "issuer://test",
+          sub: "agent:test-bot",
+          secretVersion: "1",
+          iat: "2026-06-01T00:00:00Z",
+          expSeconds: 300,
+          nonce: mkNonce(),
+        },
       });
-      const skewed = new Date("2026-06-01T00:05:25Z"); // iat + 300 + 25s skew
+      const skewed = new Date("2026-06-01T00:05:25Z");
       const result = await verify({
         envelope: env,
         secret: SECRET,
@@ -285,10 +315,17 @@ describe("SEP-2787 Attestation", () => {
 
     it("13. Clock skew beyond 30s fails", async () => {
       const env = await makeEnvelope({
-        iat: "2026-06-01T00:00:00Z",
-        exp: 300,
+        issuerAsserted: {
+          alg: "HS256",
+          iss: "issuer://test",
+          sub: "agent:test-bot",
+          secretVersion: "1",
+          iat: "2026-06-01T00:00:00Z",
+          expSeconds: 300,
+          nonce: mkNonce(),
+        },
       });
-      const skewed = new Date("2026-06-01T00:05:35Z"); // iat + 300 + 35s skew
+      const skewed = new Date("2026-06-01T00:05:35Z");
       const result = await verify({
         envelope: env,
         secret: SECRET,
@@ -322,12 +359,14 @@ describe("SEP-2787 Attestation", () => {
   describe("Missing args commitment", () => {
     it("16. No argsRef or argsProjection fails", async () => {
       const env = await makeEnvelope({
-        toolCalls: [
-          {
-            name: "test_tool",
-            serverFingerprint: "mcp://test.example.com",
-          },
-        ],
+        payloadDerived: {
+          toolCalls: [
+            {
+              name: "test_tool",
+              serverFingerprint: "mcp://test.example.com",
+            },
+          ],
+        },
       });
       const result = await verify({
         envelope: env,

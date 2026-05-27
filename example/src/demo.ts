@@ -19,7 +19,6 @@ function mkNonce(): string {
 }
 
 async function fileResolver(uri: string): Promise<Uint8Array> {
-  // Inline fixture data as fallback
   const inline: Record<string, Uint8Array> = {
     "fixture://email-body.txt": new TextEncoder().encode("Welcome to the platform! We're glad to have you."),
     "fixture://large-payload.bin": new TextEncoder().encode("fake binary content for ref resolution test"),
@@ -44,22 +43,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com", subject: "Welcome!", body: "Welcome to the platform!" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send onboarding email to new user",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send onboarding email to new user",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -87,23 +91,28 @@ async function runScenarios() {
 
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send onboarding email with ref body",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
-                argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Welcome!" }),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send onboarding email with ref body",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
+                  argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Welcome!" }),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -129,22 +138,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com", subject: "Welcome!" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email to new user",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email to new user",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -172,27 +186,31 @@ async function runScenarios() {
 
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send onboarding email with ref body",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send onboarding email with ref body",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
         );
-        // Override resolver to return different content
         const tamperedResolver = async (uri: string) => {
           return new TextEncoder().encode("COMPROMISED: different content here.");
         };
@@ -217,22 +235,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Manage user email",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Manage user email",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -258,22 +281,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -298,22 +326,27 @@ async function runScenarios() {
       run: async () => {
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T11:50:00Z",
-            exp: 5,
-            nonce: mkNonce(),
-            intent: "Send email (too late)",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: '{"to":"grant@example.com"}',
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T11:50:00Z",
+              expSeconds: 5,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email (too late)",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: '{"to":"grant@example.com"}',
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -340,22 +373,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce,
-            intent: "Send email",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce,
+            },
+            plannerDeclared: {
+              intent: "Send email",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -371,8 +409,8 @@ async function runScenarios() {
           resolveRef: fileResolver,
           nonceCache: cache,
         };
-        await verify(baseParams); // first — OK
-        const result = await verify(baseParams); // second — replay
+        await verify(baseParams);
+        const result = await verify(baseParams);
         return { signed, result };
       },
     },
@@ -385,22 +423,27 @@ async function runScenarios() {
         const args = { to: "grant@example.com" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           "attacker-secret",
@@ -426,27 +469,31 @@ async function runScenarios() {
         const args = { to: "grant@example.com" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(args),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
         );
-        // Flip last hex char
         const chars = [...signed.signature];
         const last = chars[chars.length - 1];
         chars[chars.length - 1] = last === "f" ? "0" : String.fromCharCode(last.charCodeAt(0) + 1);
@@ -472,22 +519,27 @@ async function runScenarios() {
         const projection = { subject: "Welcome!" };
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email with PII redacted from projection",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsProjection: JSON.stringify(projection),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email with PII redacted from projection",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(projection),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -515,23 +567,28 @@ async function runScenarios() {
 
         const signed = await sign(
           {
-            version: 1,
-            alg: "HS256",
-            iss: "issuer://demo",
-            sub: "agent:email-bot",
-            secretVersion: "1",
-            iat: "2026-05-27T12:00:00Z",
-            exp: 300,
-            nonce: mkNonce(),
-            intent: "Send email with large attachment ref",
-            toolCalls: [
-              {
-                name: "send_email",
-                argsRef: { uri: "fixture://large-payload.bin", digest: bodyDigest },
-                argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Your report" }),
-                serverFingerprint: "mcp://email.example.com",
-              },
-            ],
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email with large attachment ref",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsRef: { uri: "fixture://large-payload.bin", digest: bodyDigest },
+                  argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Your report" }),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
             signature: "",
           },
           SECRET,
@@ -554,7 +611,6 @@ async function runScenarios() {
     },
   ];
 
-  // ── Report ──
   let passed = 0;
   let failed = 0;
 

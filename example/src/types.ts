@@ -7,20 +7,26 @@ export interface ToolCallEntry {
 }
 
 export interface Attestation {
-  version: 1;
-  alg: "HS256" | "ES256" | "RS256";
-  iss: string;
-  sub: string;
-  secretVersion: string;
-  iat: string;
-  exp: number;
-  nonce: string;
-  intent: string;
-  toolCalls: ToolCallEntry[];
+  issuerAsserted: {
+    alg: "HS256" | "ES256" | "RS256";
+    iss: string;
+    sub: string;
+    secretVersion: string;
+    iat: string;
+    expSeconds: number;
+    nonce: string;
+  };
+  plannerDeclared: {
+    intent: string;
+    requestedCapability?: string;
+  };
+  payloadDerived: {
+    toolCalls: ToolCallEntry[];
+  };
   signature: string;
 }
 
-export type Alg = Attestation["alg"];
+export type Alg = Attestation["issuerAsserted"]["alg"];
 
 export interface VerifyParams {
   envelope: Attestation;
