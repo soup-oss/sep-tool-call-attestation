@@ -335,7 +335,7 @@ Tool call arguments vary widely in size and sensitivity. A single args field for
 - **Reference (content-addressed)**: A retrieval URI alongside its digest. The verifier fetches, hashes, and confirms. Useful when arguments are large, stored externally (file contents, image data), or must not cross the attestation wire for privacy reasons.
 - **Projection (redacted or self-contained audit)**: A transformed, summarized, or identity-copied version of the arguments, carried inline. Useful when the full payload is manageable and a self-contained audit record is needed. For privacy- or size-sensitive cases, the projection may be a redacted subset or a hash commitment rather than the full arguments. The attestation signature covers the projection, so no separate digest is needed.
 
-      The projection carries no intent flag. The verifier classifies it as identity or redacted by comparing the canonicalized projection against the canonicalized runtime arguments (see Rule 5). A match means the attested projection equals what was executed; a mismatch means the projection is a subset or transformation — acceptable for audit, but incomplete by design.
+The projection carries no intent flag. The verifier classifies it as identity or redacted by comparing the canonicalized projection against the canonicalized runtime arguments (see Rule 5). A match means the attested projection equals what was executed; a mismatch means the projection is a subset or transformation — acceptable for audit, but incomplete by design.
 
 At least one of the two MUST be present per `payloadDerived.toolCalls` entry.
 
