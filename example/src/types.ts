@@ -1,8 +1,8 @@
 /** Matches the SEP-2787 Attestation interface from the spec */
 export interface ToolCallEntry {
   name: string;
-  args_ref?: { uri: string; digest: string };
-  args_projection?: string;
+  argsRef?: { uri: string; digest: string };
+  argsProjection?: string;
   serverFingerprint: string;
 }
 

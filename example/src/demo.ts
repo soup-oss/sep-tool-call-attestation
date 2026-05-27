@@ -36,9 +36,9 @@ interface Scenario {
 
 async function runScenarios() {
   const scenarios: Scenario[] = [
-    // ── 1. Happy path: args_projection identity ──
+    // ── 1. Happy path: argsProjection identity ──
     {
-      name: "Happy path — args_projection identity",
+      name: "Happy path — argsProjection identity",
       description: "grant@example.com sends 'Welcome' email with full args in projection",
       run: async () => {
         const args = { to: "grant@example.com", subject: "Welcome!", body: "Welcome to the platform!" };
@@ -56,7 +56,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -77,9 +77,9 @@ async function runScenarios() {
       },
     },
 
-    // ── 2. Happy path: args_ref resolves local file ──
+    // ── 2. Happy path: argsRef resolves local file ──
     {
-      name: "Happy path — args_ref resolves local file",
+      name: "Happy path — argsRef resolves local file",
       description: "Email body loaded from file ref, identity projection for to/subject",
       run: async () => {
         const bodyContent = new TextEncoder().encode("Welcome to the platform! We're glad to have you.");
@@ -99,8 +99,8 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_ref: { uri: "fixture://email-body.txt", digest: bodyDigest },
-                args_projection: JSON.stringify({ to: "grant@example.com", subject: "Welcome!" }),
+                argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
+                argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Welcome!" }),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -121,9 +121,9 @@ async function runScenarios() {
       },
     },
 
-    // ── 3. Tampered args_projection (change subject after signing) ──
+    // ── 3. Tampered argsProjection (change subject after signing) ──
     {
-      name: "Tampered args_projection — different subject at runtime",
+      name: "Tampered argsProjection — different subject at runtime",
       description: "Runtime args have 'Goodbye' subject, projection has 'Welcome' — redacted projection",
       run: async () => {
         const args = { to: "grant@example.com", subject: "Welcome!" };
@@ -141,7 +141,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -184,7 +184,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_ref: { uri: "fixture://email-body.txt", digest: bodyDigest },
+                argsRef: { uri: "fixture://email-body.txt", digest: bodyDigest },
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -229,7 +229,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -270,7 +270,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -310,7 +310,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: '{"to":"grant@example.com"}',
+                argsProjection: '{"to":"grant@example.com"}',
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -352,7 +352,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -397,7 +397,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -438,7 +438,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(args),
+                argsProjection: JSON.stringify(args),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -464,9 +464,9 @@ async function runScenarios() {
       },
     },
 
-    // ── 11. Redacted args_projection ──
+    // ── 11. Redacted argsProjection ──
     {
-      name: "Redacted args_projection — summary only",
+      name: "Redacted argsProjection — summary only",
       description: "Projection has { subject } but runtime has to+subject+body — non-matching is OK",
       run: async () => {
         const projection = { subject: "Welcome!" };
@@ -484,7 +484,7 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_projection: JSON.stringify(projection),
+                argsProjection: JSON.stringify(projection),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],
@@ -507,7 +507,7 @@ async function runScenarios() {
 
     // ── 12. Mixed args (ref + projection) ──
     {
-      name: "Mixed args — args_ref for body, args_projection for to/subject",
+      name: "Mixed args — argsRef for body, argsProjection for to/subject",
       description: "Large body via ref, metadata via projection",
       run: async () => {
         const bodyContent = new TextEncoder().encode("fake binary content for ref resolution test");
@@ -527,8 +527,8 @@ async function runScenarios() {
             toolCalls: [
               {
                 name: "send_email",
-                args_ref: { uri: "fixture://large-payload.bin", digest: bodyDigest },
-                args_projection: JSON.stringify({ to: "grant@example.com", subject: "Your report" }),
+                argsRef: { uri: "fixture://large-payload.bin", digest: bodyDigest },
+                argsProjection: JSON.stringify({ to: "grant@example.com", subject: "Your report" }),
                 serverFingerprint: "mcp://email.example.com",
               },
             ],

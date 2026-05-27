@@ -45,7 +45,7 @@ async function makeEnvelope(
       toolCalls: [
         {
           name: "test_tool",
-          args_projection: JSON.stringify(args),
+          argsProjection: JSON.stringify(args),
           serverFingerprint: "mcp://test.example.com",
         },
       ],
@@ -59,7 +59,7 @@ async function makeEnvelope(
 describe("SEP-2787 Attestation", () => {
   // ── Happy path ──
   describe("Happy path", () => {
-    it("1. args_projection identity passes", async () => {
+    it("1. argsProjection identity passes", async () => {
       const args = { to: "a@b.com", subject: "Hi", body: "Hello!" };
       const env = await makeEnvelope();
       const result = await verify({
@@ -74,7 +74,7 @@ describe("SEP-2787 Attestation", () => {
       expect(result.projectionMatch).toBe("identity");
     });
 
-    it("2. args_ref resolves and passes", async () => {
+    it("2. argsRef resolves and passes", async () => {
       const contents = "file content here";
       const ref = fixtureRef(contents);
       const args = { to: "a@b.com", subject: "Hi" };
@@ -82,8 +82,8 @@ describe("SEP-2787 Attestation", () => {
         toolCalls: [
           {
             name: "test_tool",
-            args_ref: ref,
-            args_projection: JSON.stringify(args),
+            argsRef: ref,
+            argsProjection: JSON.stringify(args),
             serverFingerprint: "mcp://test.example.com",
           },
         ],
@@ -105,7 +105,7 @@ describe("SEP-2787 Attestation", () => {
         toolCalls: [
           {
             name: "test_tool",
-            args_projection: JSON.stringify({ subject: "Hi" }),
+            argsProjection: JSON.stringify({ subject: "Hi" }),
             serverFingerprint: "mcp://test.example.com",
           },
         ],
@@ -184,13 +184,13 @@ describe("SEP-2787 Attestation", () => {
       expect(result.reason).toBe("server_mismatch");
     });
 
-    it("8. Tampered args_ref content fails", async () => {
+    it("8. Tampered argsRef content fails", async () => {
       const ref = fixtureRef("real content");
       const env = await makeEnvelope({
         toolCalls: [
           {
             name: "test_tool",
-            args_ref: ref,
+            argsRef: ref,
             serverFingerprint: "mcp://test.example.com",
           },
         ],
@@ -320,7 +320,7 @@ describe("SEP-2787 Attestation", () => {
 
   // ── Missing args commitment ──
   describe("Missing args commitment", () => {
-    it("16. No args_ref or args_projection fails", async () => {
+    it("16. No argsRef or argsProjection fails", async () => {
       const env = await makeEnvelope({
         toolCalls: [
           {

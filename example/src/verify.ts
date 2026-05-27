@@ -57,22 +57,22 @@ export async function verify(params: VerifyParams): Promise<VerifyResult> {
   // ── Rule 5: Argument commitment verification ──
   let projectionMatch: "identity" | "redacted" | null = null;
 
-  if (entry.args_ref && entry.args_ref.uri) {
-    const resolved = await resolveRef(entry.args_ref.uri);
+  if (entry.argsRef && entry.argsRef.uri) {
+    const resolved = await resolveRef(entry.argsRef.uri);
     const digest = base64url(createHash("sha256").update(resolved).digest());
-    if (digest !== entry.args_ref.digest) {
+    if (digest !== entry.argsRef.digest) {
       return { ok: false, reason: "args_commitment_mismatch" };
     }
   }
 
-  if (entry.args_projection !== undefined) {
-    const proj = JSON.parse(entry.args_projection);
+  if (entry.argsProjection !== undefined) {
+    const proj = JSON.parse(entry.argsProjection);
     const projCanon = canonicalize(proj);
     const runtimeCanon = canonicalize(runtimeArguments);
     projectionMatch = projCanon === runtimeCanon ? "identity" : "redacted";
   }
 
-  if (!entry.args_ref && entry.args_projection === undefined) {
+  if (!entry.argsRef && entry.argsProjection === undefined) {
     return { ok: false, reason: "args_commitment_mismatch" };
   }
 
