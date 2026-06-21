@@ -54,6 +54,10 @@ async function runScenarios() {
             },
             plannerDeclared: {
               intent: "Send onboarding email to new user",
+              sessionId: "sess_f8a2b1",
+              turnId: "turn_7",
+              toolCallId: "tc_42",
+              agentLineage: "parent:onboarder/child:email-bot",
             },
             payloadDerived: {
               toolCalls: [
@@ -557,7 +561,82 @@ async function runScenarios() {
       },
     },
 
-    // ── 12. Mixed args (ref + projection) ──
+    // ── 12. Correlation fields are signed and pass through ──
+    {
+      name: "Correlation fields — signed and pass through",
+      description: "Correlation handles (sessionId, turnId, toolCallId, agentLineage) are covered by the signature. Modifying them after signing causes signature_invalid. They pass through verification as opaque metadata.",
+      run: async () => {
+        const args = { to: "grant@example.com", subject: "Welcome!" };
+        const signed = await sign(
+          {
+            issuerAsserted: {
+              alg: "HS256",
+              iss: "issuer://demo",
+              sub: "agent:email-bot",
+              secretVersion: "1",
+              iat: "2026-05-27T12:00:00Z",
+              expSeconds: 300,
+              nonce: mkNonce(),
+            },
+            plannerDeclared: {
+              intent: "Send email with correlation handles",
+              sessionId: "sess_f8a2b1",
+              turnId: "turn_7",
+              toolCallId: "tc_42",
+              agentLineage: "parent:onboarder/child:email-bot",
+            },
+            payloadDerived: {
+              toolCalls: [
+                {
+                  name: "send_email",
+                  argsProjection: JSON.stringify(args),
+                  serverFingerprint: "mcp://email.example.com",
+                },
+              ],
+            },
+            signature: "",
+          },
+          SECRET,
+        );
+
+        // Verify with correct correlation fields — should pass
+        const result1 = await verify({
+          envelope: signed,
+          secret: SECRET,
+          runtimeToolName: "send_email",
+          runtimeArguments: args,
+          runtimeServerFingerprint: "mcp://email.example.com",
+          now: NOW,
+          resolveRef: fileResolver,
+        });
+
+        // Tamper with a correlation field after signing — should fail
+        const tampered = {
+          ...signed,
+          plannerDeclared: {
+            ...signed.plannerDeclared,
+            sessionId: "sess_tampered",
+          },
+        };
+        const result2 = await verify({
+          envelope: tampered,
+          secret: SECRET,
+          runtimeToolName: "send_email",
+          runtimeArguments: args,
+          runtimeServerFingerprint: "mcp://email.example.com",
+          now: NOW,
+          resolveRef: fileResolver,
+        });
+
+        // Track both results — first passes, second should reject
+        const passed = result1.ok;
+        const rejected = !result2.ok && result2.reason === "signature_invalid";
+        const allGood = passed && rejected;
+        return { signed, result: { ok: allGood, reason: allGood ? undefined : "correlation_tamper_test_failed" } };
+      },
+    },
+
+    // ── 13. Mixed args (ref + projection) ──
     {
       name: "Mixed args — argsRef for body, argsProjection for to/subject",
       description: "Large body via ref, metadata via projection",
