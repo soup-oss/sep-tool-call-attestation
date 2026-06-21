@@ -355,9 +355,9 @@ describe("SEP-2787 Attestation", () => {
     });
   });
 
-  // ── Correlation fields ──
-  describe("Correlation fields", () => {
-    it("17. Correlation fields are covered by the signature", async () => {
+  // ── plannerRef ──
+  describe("plannerRef", () => {
+    it("17. plannerRef is covered by the signature", async () => {
       const args = { to: "a@b.com" };
       const env = await sign({
         issuerAsserted: {
@@ -370,11 +370,8 @@ describe("SEP-2787 Attestation", () => {
           nonce: mkNonce(),
         },
         plannerDeclared: {
-          intent: "Test correlation",
-          sessionId: "sess_abc",
-          turnId: "turn_1",
-          toolCallId: "tc_99",
-          agentLineage: "parent:alice/child:bob",
+          intent: "Test planner ref",
+          plannerRef: "sess_abc/turn_1/tc_99",
         },
         payloadDerived: {
           toolCalls: [
@@ -395,7 +392,7 @@ describe("SEP-2787 Attestation", () => {
       expect(result.ok).toBe(true);
     });
 
-    it("18. Tampering with correlation field after signing fails", async () => {
+    it("18. Tampering with plannerRef after signing fails", async () => {
       const args = { to: "a@b.com" };
       const env = await sign({
         issuerAsserted: {
@@ -408,8 +405,8 @@ describe("SEP-2787 Attestation", () => {
           nonce: mkNonce(),
         },
         plannerDeclared: {
-          intent: "Test correlation",
-          sessionId: "sess_abc",
+          intent: "Test planner ref",
+          plannerRef: "sess_abc",
         },
         payloadDerived: {
           toolCalls: [
@@ -421,7 +418,7 @@ describe("SEP-2787 Attestation", () => {
 
       const tampered = {
         ...env,
-        plannerDeclared: { ...env.plannerDeclared, sessionId: "sess_tampered" },
+        plannerDeclared: { ...env.plannerDeclared, plannerRef: "sess_tampered" },
       };
       const result = await verify({
         envelope: tampered,
@@ -435,7 +432,7 @@ describe("SEP-2787 Attestation", () => {
       expect(result.reason).toBe("signature_invalid");
     });
 
-    it("19. Correlation fields are optional — absent still passes", async () => {
+    it("19. plannerRef is optional — absent still passes", async () => {
       const args = { to: "a@b.com" };
       const env = await makeEnvelope({
         payloadDerived: {

@@ -19,10 +19,7 @@ export interface Attestation {
   plannerDeclared: {
     intent: string;
     requestedCapability?: string;
-    sessionId?: string;
-    turnId?: string;
-    toolCallId?: string;
-    agentLineage?: string;
+    plannerRef?: string;
   };
   payloadDerived: {
     toolCalls: ToolCallEntry[];

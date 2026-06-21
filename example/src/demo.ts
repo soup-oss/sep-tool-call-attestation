@@ -54,10 +54,7 @@ async function runScenarios() {
             },
             plannerDeclared: {
               intent: "Send onboarding email to new user",
-              sessionId: "sess_f8a2b1",
-              turnId: "turn_7",
-              toolCallId: "tc_42",
-              agentLineage: "parent:onboarder/child:email-bot",
+              plannerRef: "sess_f8a2b1/turn_7/tc_42",
             },
             payloadDerived: {
               toolCalls: [
@@ -561,10 +558,10 @@ async function runScenarios() {
       },
     },
 
-    // ── 12. Correlation fields are signed and pass through ──
+    // ── 12. plannerRef is signed and pass through ──
     {
-      name: "Correlation fields — signed and pass through",
-      description: "Correlation handles (sessionId, turnId, toolCallId, agentLineage) are covered by the signature. Modifying them after signing causes signature_invalid. They pass through verification as opaque metadata.",
+      name: "plannerRef — signed and pass through",
+      description: "An opaque planner reference is covered by the signature. Modifying it after signing causes signature_invalid. It passes through verification without affecting the result.",
       run: async () => {
         const args = { to: "grant@example.com", subject: "Welcome!" };
         const signed = await sign(
@@ -579,11 +576,8 @@ async function runScenarios() {
               nonce: mkNonce(),
             },
             plannerDeclared: {
-              intent: "Send email with correlation handles",
-              sessionId: "sess_f8a2b1",
-              turnId: "turn_7",
-              toolCallId: "tc_42",
-              agentLineage: "parent:onboarder/child:email-bot",
+              intent: "Send email with planner ref",
+              plannerRef: "sess_f8a2b1/turn_7/tc_42",
             },
             payloadDerived: {
               toolCalls: [
@@ -599,7 +593,6 @@ async function runScenarios() {
           SECRET,
         );
 
-        // Verify with correct correlation fields — should pass
         const result1 = await verify({
           envelope: signed,
           secret: SECRET,
@@ -610,12 +603,11 @@ async function runScenarios() {
           resolveRef: fileResolver,
         });
 
-        // Tamper with a correlation field after signing — should fail
         const tampered = {
           ...signed,
           plannerDeclared: {
             ...signed.plannerDeclared,
-            sessionId: "sess_tampered",
+            plannerRef: "sess_tampered",
           },
         };
         const result2 = await verify({
@@ -628,11 +620,10 @@ async function runScenarios() {
           resolveRef: fileResolver,
         });
 
-        // Track both results — first passes, second should reject
         const passed = result1.ok;
         const rejected = !result2.ok && result2.reason === "signature_invalid";
         const allGood = passed && rejected;
-        return { signed, result: { ok: allGood, reason: allGood ? undefined : "correlation_tamper_test_failed" } };
+        return { signed, result: { ok: allGood, reason: allGood ? undefined : "plannerRef_tamper_test_failed" } };
       },
     },
 
